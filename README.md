@@ -8,3 +8,5 @@ OPTION:
 	--getstate		- Returns the state of the device ON or OFF
 	--getpower		- Returns the current power consumption
 	--setstate on|off	- Turns the device ON or OFF
+
+Remark:	Do not forget to edit the first two lines of the script and enter the IP address and PIN number of the device inside the double quotes
