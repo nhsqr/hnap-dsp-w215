@@ -1,7 +1,7 @@
 #!/bin/bash
 #modify next two line for your DSP-W215
-IP="192.168.1.70"
-PIN="777260"
+IP="Enter IP address of the device here"
+PIN="Enter PIN number of the device here"
 #do not modify after this line if you don't know what you are doing
 
 function usage {
