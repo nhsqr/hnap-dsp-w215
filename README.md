@@ -1,6 +1,8 @@
 # hnap-dsp-w215
 Bash script for some of the API functions of D-Link DSP-W215
 
+This script was made thanks to: https://github.com/bikerp/dsp-w215-hnap
+
 Usage: hnap-dsp-w215.sh [OPTION]
 
 OPTION:
