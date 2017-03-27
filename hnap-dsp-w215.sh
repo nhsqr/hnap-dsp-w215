@@ -22,7 +22,7 @@ contentType="Content-Type: text/xml; charset=utf-8"
 soapLogin="SOAPAction: \"http://purenetworks.com/HNAP1/Login\""
 
 #Get Login data
-ret=`curl -s -X POST -H "$contentType" -H "$soapLogin" --data-binary @data.xml http://$IP/HNAP1`
+ret=`curl -s -X POST -H "$contentType" -H "$soapLogin" --data-binary @$(dirname $0)/data.xml http://$IP/HNAP1`
 
 function getResult {
   opt=`echo -n "$ret" | grep -Po "(?<=<$1>).*(?=</$1>)"`
