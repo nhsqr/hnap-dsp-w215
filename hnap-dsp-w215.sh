@@ -3,35 +3,35 @@
 IP="Enter IP address of the device here"
 PIN="Enter PIN number of the device here"
 #do not modify after this line if you don't know what you are doing
+contentType="Content-Type: text/xml; charset=utf-8"
+soapLogin="SOAPAction: \"http://purenetworks.com/HNAP1/Login\""
+#Get Login data
+xmlLoginData=`curl -s -X POST -H "$contentType" -H "$soapLogin" --data-binary @$(dirname $0)/data.xml http://$IP/HNAP1`
 
 function usage {
-	echo -e "\nUsage: $(basename $0) [OPTION]"
-	echo -e "\nOPTION:"
-	echo -e "\t--getstate\t\t- Returns the state of the device ON or OFF"
-	echo -e "\t--getpower\t\t- Returns the current power consumption"
-	echo -e "\t--setstate on|off\t- Turns the device ON or OFF"
+	echo -e "\nUsage: $(basename $0) <options>"
+	echo -e "\n<options> are:"
+	echo -e "  --state\t   - Get state of the device"
+	echo -e "  --state [on|off] - Set state of the device ON or OFF"
+	echo -e "  --power\t   - Current power consumption"
+	echo -e "  --temp\t   - Current temperature of the device"
+	echo -e "  --total\t   - Total consumption for current month\n"
 }
 
 function hash_hmac {
-  data="$1"
-  key="$2"
-  echo -n "$data" | openssl dgst "-md5" -hmac "$key" -binary | xxd -ps -u
+	data="$1"
+	key="$2"
+	echo -n "$data" | openssl dgst "-md5" -hmac "$key" -binary | xxd -ps -u
 }
 
-contentType="Content-Type: text/xml; charset=utf-8"
-soapLogin="SOAPAction: \"http://purenetworks.com/HNAP1/Login\""
-
-#Get Login data
-ret=`curl -s -X POST -H "$contentType" -H "$soapLogin" --data-binary @$(dirname $0)/data.xml http://$IP/HNAP1`
-
-function getResult {
-  opt=`echo -n "$ret" | grep -Po "(?<=<$1>).*(?=</$1>)"`
-  echo -n "$opt"
+#getValueFor Variable FromXMLresult
+function getValueFor {
+	echo -n "$2" | grep -Po "(?<=<$1>).*(?=</$1>)"
 }
 
-challenge=`getResult Challenge`
-cookie="Cookie: uid=`getResult Cookie`"
-publickey="`getResult PublicKey`$PIN"
+challenge=`getValueFor Challenge "$xmlLoginData"`
+cookie="Cookie: uid=`getValueFor Cookie "$xmlLoginData"`"
+publickey="`getValueFor PublicKey "$xmlLoginData"`$PIN"
 privatekey=`hash_hmac "$challenge" "$publickey"`
 password=`hash_hmac "$challenge" "$privatekey"`
 timestamp=`date +%s`
@@ -40,97 +40,112 @@ auth=`hash_hmac "$auth_str" "$privatekey"`
 hnap_auth="HNAP_AUTH: $auth $timestamp"
 
 head="<?xml version=\"1.0\" encoding=\"utf-8\"?><soap:Envelope xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\" xmlns:soap=\"http://schemas.xmlsoap.org/soap/envelope/\"><soap:Body>"
-end="</soap:Body></soap:Envelope>"
-
 message="<Login xmlns=\"http://purenetworks.com/HNAP1/\"><Action>login</Action><Username>admin</Username><LoginPassword>$password</LoginPassword><Captcha/></Login>"
-
+end="</soap:Body></soap:Envelope>"
 login="$head$message$end"
 
 #Get Login Result
-ret=`curl -s -X POST -H "$contentType" -H "$soapLogin" -H "$hnap_auth" -H "$cookie" --data-binary "$login" http://$IP/HNAP1`
+xmlLogin=`curl -s -X POST -H "$contentType" -H "$soapLogin" -H "$hnap_auth" -H "$cookie" --data-binary "$login" http://$IP/HNAP1`
+loginResult=`getValueFor LoginResult "$xmlLogin"`
+if [ "$loginResult" != "success" ]
+	then
+		echo $loginResult
+		exit 0
+fi
 
-#Next line is for debug purposes only
-#echo -e "Login: `getResult LoginResult`" #\tAuthStr=$auth_str\tHNAP=$hnap_auth"
-
-
-case "$1" in
---getstate )
-	#Next 2 rows to modify query
-	method="GetSocketSettings"
-	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>1</ModuleID></$method>"
-
-	#Do not modify after this line
-	soapAction="SOAPAction: \"http://purenetworks.com/HNAP1/$method\""
-	authStr="$timestamp\"http://purenetworks.com/HNAP1/$method\""
+function getSOAPfor {
+	soapAction="SOAPAction: \"http://purenetworks.com/HNAP1/$1\""
+	authStr="$timestamp\"http://purenetworks.com/HNAP1/$1\""
 	auth=`hash_hmac "$authStr" "$privatekey"`
 	hnap_auth="HNAP_AUTH: $auth $timestamp"
 	data="$head$message$end"
+	#Get result from message in xml format
+	curl -s -X POST -H "$contentType" -H "$soapAction" -H "$hnap_auth" -H "$cookie" --data-binary "$data" http://$IP/HNAP1
+}
 
-	#Get Device state from GetSocketSettings
-	ret=`curl -s -X POST -H "$contentType" -H "$soapAction" -H "$hnap_auth" -H "$cookie" --data-binary "$data" http://$IP/HNAP1`
-	#echo -e "Timestamp=$timestamp\tSOAPAction=$soapAction\tAuthStr=$authStr\tAUTH=$auth\tHNAP=$hnap_auth\tRET = $ret" #This line is for debug purpose
-
-	state=`getResult OPStatus`
-	if [ "$state" = "false" ]
-	then
+function getSocketState {
+	method="GetSocketSettings"
+	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>1</ModuleID></$method>"
+	xmlState=`getSOAPfor $method`
+	state=`getValueFor OPStatus "$xmlState"`
+	if [ "$state" = "false" ]; then
 		echo "State is OFF"
-	elif [ "$state" = "true" ]
-	then
+	elif [ "$state" = "true" ]; then
 		echo "State is ON"
 	else
-		echo "State is UNKNOWN"
+		echo "Error: State is UNKNOWN"
 	fi
-	;;
---setstate )
-        #Next 3 rows to modify query
-	case "$2" in
-	"on" )
-		state="true"
-		;;
-	"off" )
-		state="false"
-		;;
-	* )
-		echo "You need to provide STATE parameter \"on\" or \"off\""
-		exit 0
-		;;
-	esac
- 	#Next 2 rows to modify query
+	exit 0
+}
+
+function setSocketState {
+	[ $1 == "on" ] && state="true" || state="false"
+	method="GetSocketSettings"
+	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>1</ModuleID></$method>"
+	xmlState=`getSOAPfor $method`
+	nickname=`getValueFor NickName "$xmlState"`
+	description=`getValueFor Description "$xmlState"`
 	method="SetSocketSettings"
-	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>1</ModuleID><NickName>Socket 1</NickName><Description>Socket 1</Description><OPStatus>$state</OPStatus><Controller>1</Controller></$method>"
+	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>1</ModuleID><NickName>$nickname</NickName><Description>$description</Description><OPStatus>$state</OPStatus></$method>"
+	xmlResult=`getSOAPfor $method`
+	echo "Set state result: `getValueFor SetSocketSettingsResult "$xmlResult"`"
+}
 
-        #Do not modify after this line
-	soapAction="SOAPAction: \"http://purenetworks.com/HNAP1/$method\""
-        authStr="$timestamp\"http://purenetworks.com/HNAP1/$method\""
-        auth=`hash_hmac "$authStr" "$privatekey"`
-        hnap_auth="HNAP_AUTH: $auth $timestamp"
-        data="$head$message$end"
-
-        #Get Device state from GetSocketSettings
-        ret=`curl -s -X POST -H "$contentType" -H "$soapAction" -H "$hnap_auth" -H "$cookie" --data-binary "$data" http://$IP/HNAP1`
-        #echo -e "Timestamp=$timestamp\tSOAPAction=$soapAction\tAuthStr=$authStr\tAUTH=$auth\tHNAP=$hnap_auth\tRET = $ret\tMessage=$message" #This line is for debug purpose
-	/bin/bash $0 --getstate
-	;;
---getpower )
-        #Next 2 rows to modify query
+function power {
 	method="GetCurrentPowerConsumption"
-        message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>2</ModuleID></$method>"
+	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>2</ModuleID></$method>"
+	xmlConsumption=`getSOAPfor $method`
+	power=`getValueFor CurrentConsumption "$xmlConsumption"`
+	echo "Power: $power W"
+}
 
-	#Do not modify after this line
-        soapAction="SOAPAction: \"http://purenetworks.com/HNAP1/$method\""
-        authStr="$timestamp\"http://purenetworks.com/HNAP1/$method\""
-        auth=`hash_hmac "$authStr" "$privatekey"`
-        hnap_auth="HNAP_AUTH: $auth $timestamp"
-        data="$head$message$end"
+function temperature {
+	method="GetCurrentTemperature"
+	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>3</ModuleID></$method>"
+	xmlTemp=`getSOAPfor $method`
+	temp=`getValueFor CurrentTemperature "$xmlTemp"`
+	echo "Temperature: $temp°C"
+}
 
-        #Get Device state from GetSocketSettings
-        ret=`curl -s -X POST -H "$contentType" -H "$soapAction" -H "$hnap_auth" -H "$cookie" --data-binary "$data" http://$IP/HNAP1`
-        #echo -e "Timestamp=$timestamp\tSOAPAction=$soapAction\tAuthStr=$authStr\tAUTH=$auth\tHNAP=$hnap_auth\tRET = $ret" #This line is for debug purpose
+function totalConsumption {
+	method="GetPMWarningThreshold"
+	message="<$method xmlns=\"http://purenetworks.com/HNAP1/\"><ModuleID>2</ModuleID></$method>"
+	xmlTotal=`getSOAPfor $method`
+	totalEnergy=`getValueFor TotalConsumption "$xmlTotal"`
+	echo "Total: $totalEnergy kWh"
+}
 
-        power=`getResult CurrentConsumption`
-        echo "Power: $power W"
-	;;
-* )
-	usage
-	;;
+case "$1" in
+
+	"--state" )
+		case "$2" in
+		"" )
+			getSocketState
+			;;
+		"on"|"off" )
+			setSocketState $2
+			;;
+		* )
+			echo "You need to provide STATE parameter \"on\" or \"off\""
+			exit 0
+			;;
+		esac
+		;;
+		
+	"--power" )
+		power
+		;;
+		
+	"--temp" )
+		temperature
+		;;
+		
+	"--total" )
+		totalConsumption
+		;;
+		
+	* )
+		usage
+		;;
+		
 esac
