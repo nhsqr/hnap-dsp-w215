@@ -88,11 +88,11 @@ get_value() {
 
 xml_escape() {
   local s="$1"
-  s=${s//&/&amp;}
-  s=${s//</&lt;}
-  s=${s//>/&gt;}
-  s=${s//\"/&quot;}
-  s=${s//\'/&apos;}
+  s=${s//&/&}
+  s=${s//</<}
+  s=${s//>/>}
+  s=${s//\"/"}
+  s=${s//\'/'}
   printf '%s' "$s"
 }
 
@@ -121,6 +121,19 @@ while [[ $# -gt 0 ]]; do
     -f|--force)   FORCE=1; shift ;;
     -h|--help)    usage; exit 0 ;;
     -v|--version) echo "$SCRIPT_NAME $VERSION"; exit 0 ;;
+    # Backward compatibility with v1 long options
+    --state)
+      COMMAND="state"
+      if [[ -n "${2:-}" && "$2" != -* ]]; then
+        STATE_ARG="$2"
+        shift 2
+      else
+        shift
+      fi
+      ;;
+    --power)  COMMAND="power"; shift ;;
+    --temp)   COMMAND="temp"; shift ;;
+    --total)  COMMAND="total"; shift ;;
     --) shift; break ;;
     -*)
       die "Unknown option: $1"
@@ -135,14 +148,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-# Also accept old-style --state / --power for backward compatibility
-case "${COMMAND:-}" in
-  --state)  COMMAND="state"; [[ -n "${1:-}" ]] && STATE_ARG="$1" ;;
-  --power)  COMMAND="power" ;;
-  --temp)   COMMAND="temp" ;;
-  --total)  COMMAND="total" ;;
-esac
 
 [[ -z "$COMMAND" ]] && { usage; exit 1; }
 [[ -z "$IP"  ]] && die "IP address required (use -i / --ip or DSP_W215_IP)"
